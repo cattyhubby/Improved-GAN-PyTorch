@@ -83,6 +83,7 @@ def get_cifar_gan_networks(latent_dim,num_classes):
     return G,D
 
 def get_mnist_gan_networks(latent_dim,num_classes):
+    # this is the network for MNIST, investigate this first - YY
 
     class Discriminator(nn.Module):
         """docstring for Discriminator"""
@@ -109,18 +110,19 @@ def get_mnist_gan_networks(latent_dim,num_classes):
                     nn.LeakyReLU(),
 
                     nn.MaxPool2d(4,stride=1),
-                    helpers.Flatten()
+                    helpers.Flatten() # stretch the data
                 )
 
             self.fc = nn.Linear(192,num_classes)
             
         def forward(self,x):
             inter_layer = self.net(x)
-            logits = self.fc(inter_layer)
+            logits = self.fc(inter_layer) # return index
             return inter_layer, logits
 
     class Generator(nn.Module):
         """docstring for Generator"""
+        # latent_dim is the noise dimension
         def __init__(self,latent_dim):
             super(Generator, self).__init__()
             self.net = nn.Sequential(
@@ -141,6 +143,7 @@ def get_mnist_gan_networks(latent_dim,num_classes):
         def forward(self,x):
             return self.net(x)
 
+    # weight initalizaition
     def init_normal(m):
         if type(m) == nn.Linear:
             nn.init.normal_(m.weight,mean=.0,std=.1)
@@ -155,7 +158,7 @@ def get_mnist_gan_networks(latent_dim,num_classes):
 
 
 def get_mnist_linear_networks(latent_dim,num_classes):
-
+# linear model for MNIST
     class Generator(nn.Module):
         def __init__(self,latent_dim):
             super(Generator,self).__init__()
@@ -211,8 +214,8 @@ def get_mnist_linear_networks(latent_dim,num_classes):
     return G,D
 
 if __name__ == '__main__':
-    G,D = get_cifar_gan_networks(latent_dim=100,num_classes=10)
-    # G,D = get_mnist_gan_networks(latent_dim=100,num_classes=10)
+    # G,D = get_cifar_gan_networks(latent_dim=100,num_classes=10)
+    G,D = get_mnist_gan_networks(latent_dim=100,num_classes=10)
 
     z = torch.randn(20,100)
     print(G(z).shape)
