@@ -1,3 +1,5 @@
+# to data loader
+
 import torch
 from torchvision import datasets,transforms,utils
 from torch.utils import data
@@ -12,41 +14,43 @@ class Data_IO():
 	def __init__(self,samples_per_class,batch_size,imgnet_normalize=False,dataset='mnist',unlab_samples_per_class=1000):
 
 		assert dataset in ('mnist','cifar10')
-		self.root = 'data/%s/'%dataset
+		self.root = 'data/%s/'%dataset # which dataset to use
 		self.dataset = dataset
-		self.img_sz = 32
-		self.samples_per_class = samples_per_class
+		self.img_sz = 32 # image size
+		self.samples_per_class = samples_per_class # labeled data
 		self.batch_size = batch_size
 		self.imgnet_normalize = imgnet_normalize
-		self.seed = 42
+		self.seed = 42 # seed for train test split 
 		self.unlab_samples_per_class = unlab_samples_per_class
 
-	def get_dataset(self,split,verbose=0):
+	def get_dataset(self,split,verbose=0): # get various dataset train/valid/test; verbose控制输出信息 (越详细运行越慢) verbose = 0没有输出；verbose = 1 简化版日志输出；verbose=2 更细致的日志输出...
 		if self.dataset == 'mnist':
-			normalize = transforms.Normalize(mean=[.5,],std=[.5])
+			normalize = transforms.Normalize(mean=[.5,],std=[.5]) # for gray scale image 
 		else:
-			normalize = transforms.Normalize(mean=[.5,.5,.5],std=[.5,.5,.5])
+			normalize = transforms.Normalize(mean=[.5,.5,.5],std=[.5,.5,.5]) # for RGB image etc.
 		transform = transforms.Compose([
 				transforms.Resize(self.img_sz),
 				transforms.CenterCrop(self.img_sz),
 				transforms.ToTensor(),
 				normalize,
-			])
+			]) # define transform
 		if split == 'train' or split == 'valid':
+			# define which dataset
 			if self.dataset == 'mnist':
 				dataset = datasets.MNIST(root=self.root, train=True, transform=transform, target_transform=None, download=True)
 				y = dataset.train_labels.numpy()
 			else:
 				dataset = datasets.CIFAR10(root=self.root, train=True, transform=transform, target_transform=None, download=True)
 				y = dataset.train_labels
-			X = np.arange(len(y)) ; 
-			X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=self.seed)
-			if split == 'train':
-				dataset = data.Subset(dataset, X_train)
+			X = np.arange(len(y)) ; # a matrix from 0 to length of y 
+			X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=self.seed) # why use X here?
+			if split == 'train': 
+				dataset = data.Subset(dataset, X_train) # data for train
 			else:
-				dataset = data.Subset(dataset, X_test)
+				dataset = data.Subset(dataset, X_test) # data for valid
 
 		elif split == 'test':
+			# define which dataset
 			if self.dataset == 'mnist':
 				dataset = datasets.MNIST(root=self.root, train=False, transform=transform, target_transform=None, download=True)
 			else:
@@ -58,7 +62,7 @@ class Data_IO():
 			print(np.unique(labels,return_counts=True))
 		return dataset
 
-	def get_dataloader(self,split,verbose=0):
+	def get_dataloader(self,split,verbose=0): # load the various dataset
 		if split == 'all_train':
 			dataset = self.get_dataset(split='train') ; shuffle = True ;
 			if self.unlab_samples_per_class != -1:
@@ -81,7 +85,7 @@ class Data_IO():
 		elif split == 'valid':
 			dataset = self.get_dataset(split='valid') ; shuffle = False ;
 
-		dataloader = data.DataLoader(dataset, batch_size=self.batch_size, shuffle=shuffle, sampler=None, batch_sampler=None, num_workers=16)
+		dataloader = data.DataLoader(dataset, batch_size=self.batch_size, shuffle=shuffle, sampler=None, batch_sampler=None, num_workers=4)
 		
 		if verbose > 0:
 			print(split,len(dataloader))
@@ -90,7 +94,7 @@ class Data_IO():
 			print(np.unique(labels,return_counts=True))
 		return dataloader
 
-	def write_imgs(self,imgs,path):
+	def write_imgs(self,imgs,path): # save images 5*5
 		imgs = imgs[:25]
 		make_grid = utils.save_image(imgs, path, nrow=5, padding=1, normalize=True, range=None, scale_each=False, pad_value=0)
 
@@ -104,8 +108,8 @@ class Data_IO():
 
 if __name__ == '__main__':
 
-	# dataset_name = 'mnist'
-	dataset_name = 'cifar10'
+	dataset_name = 'mnist'
+	# dataset_name = 'cifar10'
 	io = Data_IO(samples_per_class=100,batch_size=50,dataset=dataset_name,unlab_samples_per_class=5000)
 
 	dataset = io.get_dataset(split='train',verbose=1)
