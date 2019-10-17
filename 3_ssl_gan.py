@@ -2,15 +2,16 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import torchvision
-from tqdm import tqdm
-from tensorboardX import SummaryWriter
+from tqdm import tqdm # display progress bar
+from tensorboardX import SummaryWriter 
 import numpy as np
 from sklearn import metrics
 import argparse
 
-data_io = __import__('1_data_io')
-import helpers
-import networks
+# self writtern function 
+data_io = __import__('1_data_io') # data loader
+import helpers # other function 
+import networks # nets
 
 
 class SSL_GAN():
@@ -18,9 +19,9 @@ class SSL_GAN():
 
 		self.num_classes = 10
 		self.latent_dim = 100
-		self.batch_size = 500
-		self.samples_per_class = samples_per_class
-		self.io = data_io.Data_IO(self.samples_per_class,self.batch_size,dataset=dataset,unlab_samples_per_class=5000)
+		self.batch_size = 100
+		self.samples_per_class = samples_per_class # labeled class
+		self.io = data_io.Data_IO(self.samples_per_class,self.batch_size,dataset=dataset,unlab_samples_per_class=1000)
 		self.lr = 0.0003
 		# self.early_stopping_patience = 20
 		self.early_stopping_patience = 1000
@@ -60,22 +61,30 @@ class SSL_GAN():
 
 	def train(self,num_epochs,resume=False):
 		G,D = self.get_model(resume=resume)
+		
 		all_train_loader = self.get_dataloader(split='all_train')
+		
 		train_loader = self.get_dataloader(split='lab_train')
 		lab_train_loader = self.io.create_infinite_dataloader(train_loader)
+		
 		valid_loader = self.get_dataloader(split='valid')
 		if not resume:
 			helpers.clear_folder(self.best_save_path)
 			helpers.clear_folder(self.last_save_path)
 
 		XE = nn.CrossEntropyLoss().cuda()
-
+		
+		# optimizer
 		opt_gen = torch.optim.Adam(G.parameters(), lr=self.lr)
 		opt_disc = torch.optim.Adam(D.parameters(), lr=self.lr)
+		
+		# decay learning rate
 		scheduler_disc = torch.optim.lr_scheduler.ReduceLROnPlateau(opt_disc, mode='min', factor=0.5, patience=self.reduce_lr_patience, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=0, min_lr=0, eps=1e-08)
 		scheduler_gen = torch.optim.lr_scheduler.ReduceLROnPlateau(opt_gen, mode='min', factor=0.5, patience=self.reduce_lr_patience, verbose=True, threshold=0.0001, threshold_mode='rel', cooldown=0, min_lr=0, eps=1e-08)
 		# scheduler_disc = torch.optim.lr_scheduler.ExponentialLR(opt_disc,gamma=.999,last_epoch=-1)
 		# scheduler_gen = torch.optim.lr_scheduler.ReduceLROnPlateau(opt_gen,gamma=.999,last_epoch=-1)
+		
+		
 		max_val_loss = None
 		max_val_acc = None
 		no_improvement = global_train_step = global_test_step = 0
@@ -85,25 +94,32 @@ class SSL_GAN():
 			
 			avg_gen_loss = avg_disc_loss = 0
 			G.train(); D.train()
-			for unlab_train_x,__ in tqdm(all_train_loader):
-				lab_train_x,lab_train_y = next(lab_train_loader)
+			
+			for unlab_train_x,__ in tqdm(all_train_loader): 
+				lab_train_x,lab_train_y = next(lab_train_loader) # parallel or nested structure 
 				
 				unl = unlab_train_x.cuda()
 				inp = lab_train_x.cuda()
 				lbl = lab_train_y.cuda()
-				z = torch.randn(self.batch_size,self.latent_dim).cuda()
+				z = torch.randn(self.batch_size,self.latent_dim).cuda() # noise for generator
 
 				# Train Discriminator
+				# loss: 
 				opt_disc.zero_grad()
-				gen_inp = G(z)
-				__, logits_lab = D(inp)
-				layer_fake, logits_gen = D(gen_inp)
-				layer_real, logits_unl = D(unl)
-				l_unl = torch.logsumexp(logits_unl,dim=1)
-				l_gen = torch.logsumexp(logits_gen,dim=1)
+				gen_inp = G(z) # fake image
+				__, logits_lab = D(inp) # dis index for label image
+				layer_fake, logits_gen = D(gen_inp) # inter layer and dis index by D using fake image
+				layer_real, logits_unl = D(unl) # inter layer and dis index by D using unlabel image
+				
+				l_unl = torch.logsumexp(logits_unl,dim=1) # logsumexp for unlabel image
+				l_gen = torch.logsumexp(logits_gen,dim=1) # logsumexp for fake image
+				
+				# loss from original paper 
 				loss_unl = .5 * torch.mean(F.softplus(l_unl)) - .5* torch.mean(l_unl) +.5 * torch.mean(F.softplus(l_gen))
+				# for loss_unl, 1st part is fake image loss, 2nd and 3rd is unlabel image loss
 				loss_lab = torch.mean(XE(logits_lab, lbl))
-				loss_disc = .5 * loss_lab + .5 * loss_unl
+				loss_disc = .5 * loss_lab + .5 * loss_unl 
+				
 				loss_disc.backward()
 				opt_disc.step()
 				avg_disc_loss += loss_disc
@@ -111,14 +127,20 @@ class SSL_GAN():
 				# Train Generator
 				opt_gen.zero_grad()
 				opt_disc.zero_grad()
-				gen_inp = G(z)
-				layer_fake, __ = D(gen_inp)
-				layer_real, __ = D(unl)
+				
+				gen_inp = G(z) # fake image from G
+				layer_fake, __ = D(gen_inp) # inter layer from D using fake image
+				layer_real, __ = D(unl) # inter layer from D using unlabel image
+				
 				m1 = torch.mean(layer_real,dim=0)
 				m2 = torch.mean(layer_fake,dim=0)
+				
+				# different way of calculating G loss 
 				loss_gen = torch.mean((m1-m2)**2)
+				
 				loss_gen.backward()
 				opt_gen.step()
+				
 				avg_gen_loss += loss_gen
 
 				self.writer.add_scalar('gen_loss',loss_gen,global_train_step)
@@ -129,6 +151,7 @@ class SSL_GAN():
 			avg_gen_loss /= len(all_train_loader)
 			avg_disc_loss /= len(all_train_loader)
 
+			# test the model on val data
 			val_loss = num_correct = total_samples = 0.0
 			with torch.no_grad():
 				D.eval()
